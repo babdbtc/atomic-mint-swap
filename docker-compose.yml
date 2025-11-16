@@ -1,0 +1,42 @@
+version: '3.8'
+
+services:
+  # Mint A - for Alice's tokens
+  mint-a:
+    image: cashubtc/nutshell:0.18.0
+    container_name: cashu-mint-a
+    ports:
+      - "3338:3338"
+    environment:
+      - MINT_BACKEND_BOLT11_SAT=FakeWallet
+      - MINT_LISTEN_HOST=0.0.0.0
+      - MINT_LISTEN_PORT=3338
+      - MINT_PRIVATE_KEY=secret_key_mint_a_12345678901234567890123456789012
+      - MINT_NAME=Local Mint A
+      - MINT_DESCRIPTION=Test mint A for atomic swaps
+    command: poetry run mint
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3338/v1/info"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Mint B - for Bob's tokens
+  mint-b:
+    image: cashubtc/nutshell:0.18.0
+    container_name: cashu-mint-b
+    ports:
+      - "3339:3339"
+    environment:
+      - MINT_BACKEND_BOLT11_SAT=FakeWallet
+      - MINT_LISTEN_HOST=0.0.0.0
+      - MINT_LISTEN_PORT=3339
+      - MINT_PRIVATE_KEY=secret_key_mint_b_98765432109876543210987654321098
+      - MINT_NAME=Local Mint B
+      - MINT_DESCRIPTION=Test mint B for atomic swaps
+    command: poetry run mint
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3339/v1/info"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
