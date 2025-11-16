@@ -1,15 +1,15 @@
-# Charlie - Cashu Ecash Broker Service
+# Cashu Broker Service
 
-**Charlie** is a broker service that facilitates atomic swaps of ecash between different Cashu mints using adaptor signatures. It provides liquidity across multiple mints and enables users to exchange ecash without Lightning transactions.
+A broker service that facilitates atomic swaps of ecash between different Cashu mints using adaptor signatures. Provides liquidity across multiple mints and enables users to exchange ecash without Lightning transactions.
 
 ## Overview
 
-When Alice uses Mint A and Bob uses Mint B, but Bob wants to pay Alice, Charlie acts as an intermediary:
+When Alice uses Mint A and Bob uses Mint B, but Bob wants to pay Alice, a broker acts as an intermediary:
 
 1. **Bob** has ecash from Mint B
 2. **Alice** wants to receive ecash from Mint A
-3. **Charlie** holds liquidity on both Mint A and Mint B
-4. **Bob** swaps his Mint B ecash with Charlie to get Mint A ecash (0.5% fee)
+3. **Broker** holds liquidity on both Mint A and Mint B
+4. **Bob** swaps his Mint B ecash with the broker to get Mint A ecash (0.5% fee)
 5. **Bob** pays Alice with the Mint A ecash
 
 This enables cross-mint payments **without Lightning transactions** and with **atomic swap guarantees**.
@@ -20,11 +20,11 @@ This enables cross-mint payments **without Lightning transactions** and with **a
 - **No Lightning Required**: Direct ecash-to-ecash swaps
 - **Fee-Based Liquidity**: Broker earns fees for providing liquidity
 - **NUT-11 P2PK**: Uses Cashu's Pay-to-Public-Key standard
-- **Multi-Mint Support**: Charlie manages liquidity across multiple mints
+- **Multi-Mint Support**: Manages liquidity across multiple mints
 
 ## Project Status
 
-✅ **Core Broker Service Complete**
+✅ **TypeScript Prototype - Complete and Working**
 
 - [x] Adaptor signature primitives
 - [x] P2PK token minting and swapping (NUT-11)
@@ -33,13 +33,24 @@ This enables cross-mint payments **without Lightning transactions** and with **a
 - [x] Swap quote system with fee calculation
 - [x] Atomic swap coordinator
 - [x] End-to-end broker test (working)
+
+🚧 **Rust Production Implementation - In Progress**
+
+- [x] Project structure and dependencies
+- [x] Error handling and type system
+- [x] Schnorr adaptor signatures (schnorr_fun)
+- [ ] CDK integration for P2PK tokens
+- [ ] Async liquidity management
+- [ ] Swap coordinator with proper error handling
+- [ ] HTTP/gRPC API server
 - [ ] Nostr service announcements
-- [ ] Client discovery API
 - [ ] Production deployment tools
+
+See [Rust Port Status](./docs/RUST-PORT-STATUS.md) for details.
 
 ## Quick Start
 
-### Prerequisites
+### TypeScript Prototype
 
 ```bash
 # Install dependencies
@@ -47,21 +58,31 @@ npm install
 
 # Start local Cashu mints (requires Docker)
 ./scripts/setup-local-mints.sh
-```
 
-### Run the Demo
-
-```bash
-# Test Charlie broker service
-npx tsx tests/test-charlie-broker.ts
+# Run the working broker demo
+npx tsx tests/test-broker.ts
 ```
 
 This demonstrates:
 - Bob minting 8 sats on Mint B
-- Bob requesting a swap quote from Charlie
-- Charlie locking ecash for atomic swap
+- Bob requesting a swap quote from the broker
+- Broker locking ecash for atomic swap
 - Bob revealing adaptor secret by swapping
-- Charlie completing the swap and earning a 1 sat fee (0.5%)
+- Broker completing the swap and earning a 1 sat fee (0.5%)
+
+### Rust Implementation (In Development)
+
+```bash
+cd cashu-broker
+
+# Build the library (requires Rust toolchain)
+cargo build
+
+# Run tests
+cargo test
+
+# See cashu-broker/README.md for details
+```
 
 ## Architecture
 

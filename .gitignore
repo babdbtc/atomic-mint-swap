@@ -9,6 +9,11 @@ dist/
 build/
 *.tsbuildinfo
 
+# Rust
+target/
+**/*.rs.bk
+Cargo.lock
+
 # Testing
 coverage/
 .nyc_output/
