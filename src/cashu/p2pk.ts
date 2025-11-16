@@ -35,9 +35,27 @@ export function createP2PKSecret(
   // Generate random nonce
   const nonce = utils.randomBytes(32);
 
+  // Convert x-only pubkey (32 bytes) to compressed format (33 bytes)
+  // Need to determine correct prefix based on y-coordinate parity
+  let pubkeyForSecret: Uint8Array;
+  if (recipientPubkey.length === 32) {
+    // Lift x-coordinate to get full point
+    const point = utils.liftX(recipientPubkey);
+    const affine = point.toAffine();
+
+    // Use 0x02 for even y, 0x03 for odd y
+    const prefix = (affine.y & 1n) === 0n ? 0x02 : 0x03;
+
+    pubkeyForSecret = new Uint8Array(33);
+    pubkeyForSecret[0] = prefix;
+    pubkeyForSecret.set(recipientPubkey, 1);
+  } else {
+    pubkeyForSecret = recipientPubkey; // Already in correct format
+  }
+
   return {
     nonce: utils.bytesToHex(nonce),
-    data: utils.bytesToHex(recipientPubkey),
+    data: utils.bytesToHex(pubkeyForSecret),
     tags: [['sigflag', sigflag]],
   };
 }
@@ -81,32 +99,21 @@ export function signP2PKSecret(
   const serialized = serializeP2PKSecret(secret);
   const message = utils.hash(new TextEncoder().encode(serialized));
 
-  // Canonicalize private key to have even y-coordinate (BIP-340 style)
-  let P_point = utils.scalarMultiplyG_Point(privkey);
-  let x_final = privkey;
-
-  if (P_point.toAffine().y & 1n) {
-    x_final = utils.negateScalar(privkey);
-    P_point = utils.scalarMultiplyG_Point(x_final);
-  }
+  // RAW Schnorr (NO BIP-340 canonicalization)
+  // Do NOT negate keys - use them directly
+  const P_point = utils.scalarMultiplyG_Point(privkey);
   const P = utils.bigIntToBytes(P_point.toAffine().x);
 
-  // Generate nonce and ensure even y-coordinate
-  let nonce = utils.generatePrivateKey();
-  let R_point = utils.scalarMultiplyG_Point(nonce);
-
-  if (R_point.toAffine().y & 1n) {
-    nonce = utils.negateScalar(nonce);
-    R_point = utils.scalarMultiplyG_Point(nonce);
-  }
-
+  // Generate nonce (NO canonicalization)
+  const nonce = utils.generatePrivateKey();
+  const R_point = utils.scalarMultiplyG_Point(nonce);
   const R = utils.bigIntToBytes(R_point.toAffine().x);
 
   // Compute challenge e = H(P || R || m)
   const e = utils.hashConcat(P, R, message);
 
-  // Compute s = r + e*x (using canonicalized private key)
-  const ex = utils.multiplyScalars(e, x_final);
+  // Compute s = r + e*x (RAW Schnorr - no canonicalization)
+  const ex = utils.multiplyScalars(e, privkey);
   const s = utils.addScalars(nonce, ex);
 
   return { s, R };

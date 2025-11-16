@@ -74,6 +74,15 @@ export function getPublicKey(privkey: Uint8Array): Uint8Array {
 }
 
 /**
+ * Get compressed public key (33 bytes with 02/03 prefix)
+ */
+export function getCompressedPublicKey(privkey: Uint8Array): Uint8Array {
+  const point = secp.Point.fromPrivateKey(privkey);
+  // Return compressed format (33 bytes)
+  return hexToBytes(point.toHex(true));
+}
+
+/**
  * Lift x-only public key to full point
  * Assumes even y-coordinate (standard for Schnorr)
  */

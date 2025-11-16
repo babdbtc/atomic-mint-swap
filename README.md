@@ -1,160 +1,181 @@
-# Cashu Atomic Swap
+# Charlie - Cashu Ecash Broker Service
 
-Trustless atomic swaps of ecash between different Cashu mints using Schnorr adaptor signatures.
+**Charlie** is a broker service that facilitates atomic swaps of ecash between different Cashu mints using adaptor signatures. It provides liquidity across multiple mints and enables users to exchange ecash without Lightning transactions.
+
+## Overview
+
+When Alice uses Mint A and Bob uses Mint B, but Bob wants to pay Alice, Charlie acts as an intermediary:
+
+1. **Bob** has ecash from Mint B
+2. **Alice** wants to receive ecash from Mint A
+3. **Charlie** holds liquidity on both Mint A and Mint B
+4. **Bob** swaps his Mint B ecash with Charlie to get Mint A ecash (0.5% fee)
+5. **Bob** pays Alice with the Mint A ecash
+
+This enables cross-mint payments **without Lightning transactions** and with **atomic swap guarantees**.
 
 ## Features
 
-- **True Atomicity**: Either both parties receive funds or neither does
-- **No Trust Required**: Cryptographically guaranteed via adaptor signatures
-- **No Mint Changes**: Works with any NUT-11 compatible Cashu mint
-- **Privacy Preserving**: Swaps look like regular P2PK transactions
-- **Lightning-Free**: Direct mint-to-mint ecash exchange
-
-## How It Works
-
-1. **Discovery**: Brokers announce liquidity on Nostr
-2. **Negotiation**: Users and brokers agree on swap terms
-3. **Setup**: Both parties create P2PK locked tokens
-4. **Exchange**: Adaptor signatures are exchanged
-5. **Execution**: Atomic claiming via secret revelation
-
-See [PROTOCOL_SPECIFICATION.md](./PROTOCOL_SPECIFICATION.md) for technical details.
-
-## Installation
-
-```bash
-npm install cashu-atomic-swap
-```
-
-## Quick Start
-
-### As a Swap Initiator
-
-```typescript
-import { SwapClient } from 'cashu-atomic-swap';
-
-const client = new SwapClient({
-  nostrRelays: ['wss://relay.damus.io'],
-});
-
-// Find brokers with liquidity
-const brokers = await client.discoverBrokers({
-  fromMint: 'https://mint-a.com',
-  toMint: 'https://mint-b.com',
-  amount: 10000,
-});
-
-// Initiate swap
-const swap = await client.initiateSwap({
-  broker: brokers[0],
-  fromMint: 'https://mint-a.com',
-  toMint: 'https://mint-b.com',
-  amount: 10000,
-});
-
-// Wait for completion
-await swap.execute();
-console.log('Swap completed!');
-```
-
-### As a Broker
-
-```typescript
-import { BrokerService } from 'cashu-atomic-swap';
-
-const broker = new BrokerService({
-  nostrKeys: nostrKeypair,
-  mints: [
-    { url: 'https://mint-a.com', balance: 1000000 },
-    { url: 'https://mint-b.com', balance: 1000000 },
-  ],
-  feeRateBps: 50, // 0.5%
-});
-
-await broker.start();
-console.log('Broker running...');
-```
+- **Atomic Swaps**: Cryptographically guaranteed via adaptor signatures
+- **No Lightning Required**: Direct ecash-to-ecash swaps
+- **Fee-Based Liquidity**: Broker earns fees for providing liquidity
+- **NUT-11 P2PK**: Uses Cashu's Pay-to-Public-Key standard
+- **Multi-Mint Support**: Charlie manages liquidity across multiple mints
 
 ## Project Status
 
-✅ **Cryptography Complete - Ready for Integration Testing** ✅
+✅ **Core Broker Service Complete**
 
-- [x] Protocol specification
-- [x] Project setup
-- [x] **Adaptor signature primitives** (100% working)
-- [x] **Cashu P2PK integration** (NUT-11 compliant)
-- [x] **BDHKE blind signatures** (NUT-00 compliant)
-- [x] **Swap coordinator** (22ms execution demonstrated)
-- [x] **Token management helpers**
-- [x] **Complete test suite** (100% pass rate)
-- [x] **Docker setup for local mints**
-- [ ] End-to-end integration test (ready, needs Docker running)
-- [ ] Nostr discovery protocol
-- [ ] Broker service
-- [ ] CLI tools
-- [ ] Production testing
+- [x] Adaptor signature primitives
+- [x] P2PK token minting and swapping (NUT-11)
+- [x] BDHKE blind signatures (NUT-00)
+- [x] Liquidity management across multiple mints
+- [x] Swap quote system with fee calculation
+- [x] Atomic swap coordinator
+- [x] End-to-end broker test (working)
+- [ ] Nostr service announcements
+- [ ] Client discovery API
+- [ ] Production deployment tools
 
-### Next Step: Start Docker and Run Tests
+## Quick Start
+
+### Prerequisites
 
 ```bash
-# 1. Start Docker Desktop
-# 2. Run local mints
-./setup-local-mints.sh
+# Install dependencies
+npm install
 
-# 3. Test mints
-npx tsx test-local-mints.ts
-
-# 4. Run atomic swap test
-npx tsx test-atomic-swap-e2e.ts
+# Start local Cashu mints (requires Docker)
+./scripts/setup-local-mints.sh
 ```
 
-See [QUICK-START.md](./QUICK-START.md) and [ATOMIC-SWAP-STATUS.md](./ATOMIC-SWAP-STATUS.md) for details.
+### Run the Demo
+
+```bash
+# Test Charlie broker service
+npx tsx tests/test-charlie-broker.ts
+```
+
+This demonstrates:
+- Bob minting 8 sats on Mint B
+- Bob requesting a swap quote from Charlie
+- Charlie locking ecash for atomic swap
+- Bob revealing adaptor secret by swapping
+- Charlie completing the swap and earning a 1 sat fee (0.5%)
 
 ## Architecture
 
 ```
 src/
-├── crypto/
-│   ├── adaptor.ts          # Schnorr adaptor signatures
-│   ├── utils.ts            # Cryptographic utilities
-│   └── __tests__/          # Crypto test vectors
-├── cashu/
-│   ├── p2pk.ts             # P2PK token operations
-│   ├── mint-client.ts      # Mint API integration
-│   └── __tests__/
-├── protocol/
-│   ├── swap.ts             # Swap coordination logic
-│   ├── messages.ts         # Protocol message types
-│   └── __tests__/
 ├── broker/
-│   ├── service.ts          # Broker service
-│   ├── liquidity.ts        # Liquidity management
-│   └── __tests__/
-├── nostr/
-│   ├── discovery.ts        # Broker discovery
-│   ├── communication.ts    # Encrypted messaging
-│   └── __tests__/
-└── index.ts                # Public API
+│   ├── charlie.ts           # Main broker service
+│   ├── liquidity.ts         # Multi-mint liquidity management
+│   ├── swap-coordinator.ts  # Atomic swap execution
+│   └── types.ts             # Broker type definitions
+├── cashu/
+│   ├── mint-client.ts       # Mint API integration
+│   ├── wallet.ts            # Token minting/swapping
+│   └── types.ts             # Cashu type definitions
+├── crypto/
+│   ├── adaptor.ts           # Schnorr adaptor signatures
+│   └── utils.ts             # Cryptographic utilities
+└── index.ts                 # Public exports
 ```
 
-## Contributing
+## How It Works
 
-Contributions welcome! This is an experimental protocol. Please:
+### 1. Quote Request
+Bob requests a quote to swap 8 sats from Mint B to Mint A:
+```typescript
+const quote = await charlie.requestQuote({
+  clientId: 'bob',
+  fromMint: MINT_B_URL,
+  toMint: MINT_A_URL,
+  amount: 8,
+  clientPublicKey: bobPubkey,
+});
+// Quote: input=8 sats, output=7 sats, fee=1 sat (0.5%)
+```
 
-1. Read [PROTOCOL_SPECIFICATION.md](./PROTOCOL_SPECIFICATION.md)
-2. Check existing issues
-3. Open an issue for major changes
-4. Submit PRs with tests
+### 2. Atomic Swap Setup
+Both parties lock tokens to tweaked pubkeys:
+- Bob locks 8 sats to `Charlie + T` on Mint B
+- Charlie locks 7 sats to `Bob + T` on Mint A
+
+Where `T` is the adaptor point.
+
+### 3. Secret Revelation
+Bob spends Charlie's tokens on Mint A by signing with `Bob + t` (adaptor secret).
+This reveals the adaptor secret to Charlie.
+
+### 4. Completion
+Charlie extracts the adaptor secret from Bob's signature and spends Bob's tokens on Mint B.
+
+Both swaps complete atomically - either both succeed or neither does.
+
+## Configuration
+
+```typescript
+const charlie = new CharlieBroker({
+  mints: [
+    { mintUrl: 'http://localhost:3338', name: 'Mint A', unit: 'sat' },
+    { mintUrl: 'http://localhost:3339', name: 'Mint B', unit: 'sat' },
+  ],
+  feeRate: 0.005,        // 0.5%
+  minSwapAmount: 1,       // 1 sat minimum
+  maxSwapAmount: 10000,   // 10,000 sats maximum
+});
+
+// Initialize with liquidity
+await charlie.initialize(100); // 100 sats on each mint
+```
+
+## Documentation
+
+- [Quick Start Guide](./docs/QUICK-START.md)
+- [Protocol Specification](./docs/PROTOCOL_SPECIFICATION.md)
+- [Atomic Swap Analysis](./docs/ATOMIC_SWAP_ANALYSIS.md)
+- [Current Status](./docs/STATUS.md)
+
+## Development
+
+```bash
+# Run tests
+npm test
+
+# Run specific test
+npx tsx tests/test-charlie-broker.ts
+
+# Run local mints
+./scripts/setup-local-mints.sh
+
+# Check mint status
+docker-compose ps
+docker-compose logs
+```
 
 ## Security
 
-⚠️ **This is experimental software. Do not use with large amounts.**
+⚠️ **Experimental Software - Use at your own risk**
 
-- Cryptography is based on well-established primitives
-- Protocol has not been formally audited
-- Use at your own risk
+- Cryptography based on Schnorr adaptor signatures
+- Uses NUT-00 (BDHKE) and NUT-11 (P2PK) standards
+- Not formally audited
+- Do not use with large amounts
 
-Report security issues to: [contact method]
+## Next Steps
+
+1. **Nostr Integration**: Enable broker service announcements
+2. **Client API**: Build user-friendly swap client
+3. **Fee Optimization**: Dynamic fee rates based on liquidity
+4. **Multi-Hop Swaps**: Chain multiple brokers for wider mint coverage
+
+## Contributing
+
+Contributions welcome! Please:
+1. Read the protocol specification
+2. Check existing issues
+3. Submit PRs with tests
 
 ## License
 
@@ -164,10 +185,4 @@ MIT
 
 - [Cashu Protocol](https://github.com/cashubtc/nuts)
 - [Scriptless Scripts](https://github.com/BlockstreamResearch/scriptless-scripts)
-- Schnorr adaptor signature research
-
-## Resources
-
-- [Protocol Specification](./PROTOCOL_SPECIFICATION.md)
-- [Feasibility Analysis](./ATOMIC_SWAP_ANALYSIS.md)
-- [Cashu Documentation](https://docs.cashu.space)
+- Adaptor signature research community

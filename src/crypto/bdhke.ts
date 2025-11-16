@@ -25,7 +25,7 @@ const DOMAIN_SEPARATOR = new TextEncoder().encode('Secp256k1_HashToCurve_Cashu_'
  *    - Else counter++
  *
  * @param message - Message to hash (can be string or bytes)
- * @returns Curve point Y (x-coordinate, 32 bytes)
+ * @returns Curve point Y (compressed format, 33 bytes)
  */
 export function hashToCurve(message: string | Uint8Array): Uint8Array {
   // Convert message to bytes if string
@@ -62,8 +62,9 @@ export function hashToCurve(message: string | Uint8Array): Uint8Array {
       // Attempt to parse as valid point
       const point = secp.Point.fromHex(compressed);
 
-      // Success! Return x-coordinate
-      return utils.bigIntToBytes(point.toAffine().x);
+      // Success! Return compressed point (33 bytes) per NUT-00 spec
+      // NOT x-only (32 bytes)
+      return utils.hexToBytes(point.toHex(true));
     } catch {
       // Invalid point, try next counter
       counter++;
@@ -103,8 +104,8 @@ export function createBlindedMessage(
   // r*G
   const rG_point = utils.scalarMultiplyG_Point(r);
 
-  // Y as point (lift x-coordinate)
-  const Y_point = utils.liftX(Y);
+  // Y as point (parse compressed format)
+  const Y_point = secp.Point.fromHex(Y);
 
   // B_ = Y + r*G
   const B_point = Y_point.add(rG_point);
@@ -121,8 +122,8 @@ export function createBlindedMessage(
  *
  * @param C_ - Blinded signature from mint (33 or 65 byte point)
  * @param r - Blinding factor used in createBlindedMessage
- * @param mintPubkey - Mint's public key K (32 bytes x-only)
- * @returns C - Unblinded signature (32 bytes x-only)
+ * @param mintPubkey - Mint's public key K (33 bytes compressed format)
+ * @returns C - Unblinded signature (33 bytes compressed format)
  *
  * Math: C = C_ - r*K
  */
@@ -142,7 +143,7 @@ export function unblindSignature(
     // Uncompressed point (04 prefix)
     C_point = secp.Point.fromHex(C_bytes);
   } else if (C_bytes.length === 32) {
-    // X-only (assume even y)
+    // X-only (assume even y) - for backward compatibility
     C_point = utils.liftX(C_bytes);
   } else {
     throw new Error(`Invalid C_ length: ${C_bytes.length}`);
@@ -152,19 +153,28 @@ export function unblindSignature(
   if (!utils.isValidScalar(r)) {
     throw new Error('Invalid blinding factor');
   }
-  if (!utils.isValidPoint(mintPubkey)) {
-    throw new Error('Invalid mint public key');
-  }
 
-  // K as point
-  const K_point = utils.liftX(mintPubkey);
+  // K as point - parse as compressed format (33 bytes)
+  let K_point: secp.Point;
+  if (mintPubkey.length === 33) {
+    // Compressed format with 02/03 prefix
+    K_point = secp.Point.fromHex(mintPubkey);
+  } else if (mintPubkey.length === 32) {
+    // X-only format (backward compatibility) - assume even y
+    K_point = utils.liftX(mintPubkey);
+  } else {
+    throw new Error(`Invalid mint pubkey length: ${mintPubkey.length}`);
+  }
 
   // r*K
   const rK_point = K_point.multiply(utils.bytesToBigInt(r));
 
   // C = C_ - r*K (use addition with negated point)
   const result_point = C_point.add(rK_point.negate());
-  const C = utils.bigIntToBytes(result_point.toAffine().x);
+
+  // CRITICAL FIX: Return compressed format (33 bytes) per NUT-00 spec
+  // Not x-only format (32 bytes)
+  const C = utils.hexToBytes(result_point.toHex(true));
 
   return C;
 }
@@ -172,7 +182,7 @@ export function unblindSignature(
 /**
  * Verify that C is a valid signature on secret by the mint
  *
- * @param C - Unblinded signature (32 bytes)
+ * @param C - Unblinded signature (33 bytes compressed format)
  * @param secret - Original secret
  * @param mintPubkey - Mint's public key K (32 bytes)
  * @returns true if valid
@@ -187,16 +197,29 @@ export function verifyUnblindedSignature(
   mintPubkey: Uint8Array
 ): boolean {
   try {
-    // Basic validation
-    if (C.length !== 32) return false;
-    if (!utils.isValidPoint(C)) return false;
+    // Basic validation - C should be compressed format (33 bytes)
+    if (C.length !== 33) return false;
+
+    // Parse as compressed point to validate
+    try {
+      secp.Point.fromHex(C);
+    } catch {
+      return false;
+    }
+
     if (!utils.isValidPoint(mintPubkey)) return false;
 
-    // Compute Y = hash_to_curve(secret)
+    // Compute Y = hash_to_curve(secret) - now returns 33 bytes compressed
     const Y = hashToCurve(secret);
 
-    // Both C and Y should be valid points
-    return utils.isValidPoint(Y);
+    // Validate Y is a valid compressed point
+    if (Y.length !== 33) return false;
+    try {
+      secp.Point.fromHex(Y);
+      return true;
+    } catch {
+      return false;
+    }
   } catch {
     return false;
   }

@@ -14,6 +14,7 @@ services:
       - MINT_PRIVATE_KEY=secret_key_mint_a_12345678901234567890123456789012
       - MINT_NAME=Local Mint A
       - MINT_DESCRIPTION=Test mint A for atomic swaps
+      - DEBUG=TRUE
     command: poetry run mint
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3338/v1/info"]
