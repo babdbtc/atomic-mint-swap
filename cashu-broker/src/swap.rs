@@ -7,14 +7,15 @@ use crate::error::{BrokerError, Result};
 use crate::liquidity::LiquidityManager;
 use crate::types::{BrokerConfig, SwapExecution, SwapQuote, SwapRequest, SwapStatus};
 use cdk::amount::SplitTarget;
-use cdk::nuts::{Conditions, Proof, Proofs, SecretKey, SigningKey, SpendingConditions};
+use cdk::nuts::{Proofs, PublicKey, SpendingConditions};
+use cdk::wallet::SendOptions;
 use cdk::Amount;
-use schnorr_fun::fun::{marker::*, Point, Scalar};
+use schnorr_fun::fun::{Point, Scalar};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 use tokio::sync::RwLock;
-use tracing::{debug, info};
+use tracing::info;
 
 /// Coordinates atomic swap execution between broker and clients
 pub struct SwapCoordinator {
@@ -70,14 +71,16 @@ impl SwapCoordinator {
 
         // Generate broker's swap key
         let broker_swap_key = Scalar::random(&mut rand::thread_rng());
-        let broker_pubkey_point = secp256kfun::G.clone() * &broker_swap_key;
+        // TODO: Fix - secp256kfun 0.11 changed Point multiplication API
+        let broker_pubkey_point = self.adaptor_ctx.adaptor_point_from_secret(&broker_swap_key);
 
         // Serialize points to compressed format (33 bytes)
         let adaptor_point_bytes = point_to_compressed_bytes(&adaptor_point);
         let broker_pubkey_bytes = point_to_compressed_bytes(&broker_pubkey_point);
 
         // Calculate tweaked pubkey: P' = P + T (broker_pubkey + adaptor_point)
-        let tweaked_pubkey_point = &broker_pubkey_point + &adaptor_point;
+        // TODO: Fix - secp256kfun 0.11 changed Point addition API
+        let tweaked_pubkey_point = self.adaptor_ctx.tweak_public_key(&broker_pubkey_point, &adaptor_point);
         let tweaked_pubkey_bytes = point_to_compressed_bytes(&tweaked_pubkey_point);
 
         let expires_at = SystemTime::now() + Duration::from_secs(self.config.quote_expiry_seconds);
@@ -95,7 +98,7 @@ impl SwapCoordinator {
             tweaked_pubkey: Some(tweaked_pubkey_bytes),
             adaptor_secret: scalar_to_bytes(&adaptor_secret),
             expires_in: self.config.quote_expiry_seconds,
-            expires_at,
+            expires_at: Some(expires_at),
             status: SwapStatus::Pending,
         };
 
@@ -149,28 +152,58 @@ impl SwapCoordinator {
             quote_data.quote.output_amount, quote_data.quote.to_mint
         );
 
-        // Get wallet and mint P2PK tokens locked to client+T
+        // Get wallet and mint tokens
         let wallet = liquidity.get_wallet(&quote_data.quote.to_mint)?;
 
-        // Create spending conditions with P2PK lock
-        let spending_conditions = SpendingConditions {
-            pubkeys: Some(vec![client_tweaked_bytes.to_vec()]),
-            locktime: None,
-            refund_keys: None,
-            num_sigs: Some(1),
-            sig_flag: cdk::nuts::SigFlag::SigInputs,
-        };
+        // Step 1: Mint tokens (broker pays Lightning invoice)
+        let mint_amount = Amount::from(quote_data.quote.output_amount);
+        let mint_quote = wallet.mint_quote(mint_amount, None).await
+            .map_err(|e| BrokerError::Cdk(format!("Failed to create mint quote: {:?}", e)))?;
 
-        // Mint tokens with P2PK conditions
-        let proofs = wallet
-            .mint_with_conditions(
-                Amount::from(quote_data.quote.output_amount),
-                SplitTarget::default(),
-                spending_conditions,
-                None,
+        // Wait for quote to complete (in production, this would be paid via Lightning)
+        // The minted tokens are automatically added to the wallet's balance
+        let _minted_proofs = wallet
+            .wait_and_mint_quote(
+                mint_quote,
+                Default::default(),
+                Default::default(),
+                std::time::Duration::from_secs(60),
             )
             .await
-            .map_err(|e| BrokerError::Cdk(format!("Failed to mint P2PK tokens: {:?}", e)))?;
+            .map_err(|e| BrokerError::Cdk(format!("Failed to mint tokens: {:?}", e)))?;
+
+        // Step 2: Lock the minted tokens to the tweaked pubkey (P + T)
+        // Create PublicKey from tweaked point bytes
+        let tweaked_pubkey = PublicKey::from_slice(&client_tweaked_bytes)
+            .map_err(|e| BrokerError::Cdk(format!("Failed to create public key: {:?}", e)))?;
+
+        // Create P2PK spending conditions
+        let spending_conditions = SpendingConditions::new_p2pk(tweaked_pubkey, None);
+
+        // Use prepare_send to create tokens locked to the tweaked pubkey
+        let prepared_send = wallet
+            .prepare_send(
+                mint_amount,
+                SendOptions {
+                    conditions: Some(spending_conditions),
+                    include_fee: false, // No additional fee for internal send
+                    ..Default::default()
+                },
+            )
+            .await
+            .map_err(|e| BrokerError::Cdk(format!("Failed to prepare locked tokens: {:?}", e)))?;
+
+        // Confirm the send to get the locked token
+        let token = prepared_send.confirm(None).await
+            .map_err(|e| BrokerError::Cdk(format!("Failed to create locked tokens: {:?}", e)))?;
+
+        // Get keysets from wallet to extract proofs from token
+        let keysets = wallet.get_mint_keysets().await
+            .map_err(|e| BrokerError::Cdk(format!("Failed to get keysets: {:?}", e)))?;
+
+        // Extract proofs from token
+        let proofs = token.proofs(&keysets)
+            .map_err(|e| BrokerError::Cdk(format!("Failed to extract proofs from token: {:?}", e)))?;
 
         // Update quote status
         quote_data.quote.status = SwapStatus::Accepted;
@@ -209,7 +242,7 @@ impl SwapCoordinator {
         let adaptor_secret = &quote_data.adaptor_secret;
 
         // Compute broker's tweaked key: broker_key + adaptor_secret
-        let broker_with_adaptor = self.adaptor_ctx.add_scalars(broker_swap_key, adaptor_secret);
+        let _broker_with_adaptor = self.adaptor_ctx.add_scalars(broker_swap_key, adaptor_secret);
 
         info!("Charlie completing swap {}...", quote_id);
 
@@ -236,10 +269,15 @@ impl SwapCoordinator {
             .await
             .map_err(|e| BrokerError::Cdk(format!("Failed to swap client tokens: {:?}", e)))?;
 
+        // Save mint URL before releasing the lock
+        let from_mint = quote_data.quote.from_mint.clone();
+
         // Add to broker's liquidity
-        liquidity
-            .add_proofs(&quote_data.quote.from_mint, new_proofs)
-            .await?;
+        if let Some(proofs) = new_proofs {
+            liquidity
+                .add_proofs(&from_mint, proofs)
+                .await?;
+        }
 
         // Update execution status
         let mut executions = self.executions.write().await;
@@ -258,7 +296,7 @@ impl SwapCoordinator {
 
         info!(
             "Charlie swap complete! Received {} sats from {}",
-            total_amount, quote_data.quote.from_mint
+            total_amount, from_mint
         );
 
         Ok(())

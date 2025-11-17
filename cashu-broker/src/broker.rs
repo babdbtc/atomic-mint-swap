@@ -8,7 +8,6 @@ use crate::swap::SwapCoordinator;
 use crate::types::{BrokerConfig, SwapQuote, SwapRequest};
 use cdk::nuts::Proofs;
 use std::sync::Arc;
-use tokio::sync::RwLock;
 use tracing::info;
 
 /// The main broker service ("Charlie")

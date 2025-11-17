@@ -72,8 +72,8 @@ pub struct SwapQuote {
     pub adaptor_secret: Vec<u8>,  // Adaptor secret (NOT shared with client in API)
     #[serde(rename = "expires_in")]
     pub expires_in: u64,          // Seconds until expiry (for API)
-    #[serde(skip)]
-    pub expires_at: SystemTime,   // Internal expiry time
+    #[serde(skip, default)]
+    pub expires_at: Option<SystemTime>,   // Internal expiry time
     pub status: SwapStatus,
 }
 
@@ -172,10 +172,13 @@ mod hex_serde_opt {
 }
 
 // Helper for SystemTime serialization
+// Currently unused but kept for potential future use with non-Option SystemTime fields
+#[allow(dead_code)]
 mod system_time_serde {
     use serde::{Deserialize, Deserializer, Serialize, Serializer};
     use std::time::{SystemTime, UNIX_EPOCH};
 
+    #[allow(dead_code)]
     pub fn serialize<S>(time: &SystemTime, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -185,6 +188,7 @@ mod system_time_serde {
         duration.as_secs().serialize(serializer)
     }
 
+    #[allow(dead_code)]
     pub fn deserialize<'de, D>(deserializer: D) -> Result<SystemTime, D::Error>
     where
         D: Deserializer<'de>,

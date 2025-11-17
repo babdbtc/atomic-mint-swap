@@ -11,11 +11,12 @@ categories = ["cryptography", "finance"]
 
 [dependencies]
 # Cashu Development Kit
-cdk = "0.4"
+cdk = "0.13.4"
+cdk-sqlite = "0.13.4"
 
 # Schnorr adaptor signatures
-schnorr_fun = { version = "0.10", features = ["serde", "bincode"] }
-secp256kfun = { version = "0.10", features = ["serde", "bincode"] }
+schnorr_fun = { version = "0.11", features = ["serde"] }
+secp256kfun = { version = "0.11", features = ["serde"] }
 
 # Async runtime
 tokio = { version = "1", features = ["full"] }
@@ -27,7 +28,7 @@ tower = "0.4"
 tower-http = { version = "0.5", features = ["cors", "trace"] }
 
 # Database
-sqlx = { version = "0.7", features = ["runtime-tokio", "sqlite", "migrate", "chrono", "uuid"] }
+sqlx = { version = "0.8", features = ["runtime-tokio", "sqlite", "migrate", "chrono", "uuid"] }
 
 # Error handling
 anyhow = "1.0"

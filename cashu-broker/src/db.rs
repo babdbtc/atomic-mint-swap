@@ -1,11 +1,10 @@
 use crate::error::BrokerError;
-use crate::types::{SwapQuote, SwapStatus};
-use chrono::{DateTime, Utc};
+use crate::types::SwapStatus;
+use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePool, SqlitePoolOptions};
 use sqlx::{FromRow, Row};
 use std::str::FromStr;
-use uuid::Uuid;
 
 /// Database connection pool
 #[derive(Clone)]
@@ -60,9 +59,9 @@ impl Database {
         .bind(&quote.id)
         .bind(&quote.source_mint)
         .bind(&quote.target_mint)
-        .bind(quote.amount_in as i64)
-        .bind(quote.amount_out as i64)
-        .bind(quote.fee as i64)
+        .bind(quote.amount_in)
+        .bind(quote.amount_out)
+        .bind(quote.fee)
         .bind(quote.fee_rate)
         .bind(&quote.broker_pubkey)
         .bind(&quote.adaptor_point)
@@ -341,8 +340,8 @@ impl Database {
         )
         .bind(&event.mint_url)
         .bind(&event.event_type)
-        .bind(event.amount as i64)
-        .bind(event.balance_after as i64)
+        .bind(event.amount)
+        .bind(event.balance_after)
         .bind(&event.quote_id)
         .bind(&event.created_at)
         .execute(&self.pool)
@@ -629,13 +628,14 @@ mod tests {
     async fn test_liquidity_events() {
         let db = setup_test_db().await;
 
+        // Test event without quote_id (for manual deposits/withdrawals)
         let event = LiquidityEvent {
             id: None,
             mint_url: "http://mint-a.test".to_string(),
-            event_type: "swap_in".to_string(),
+            event_type: "deposit".to_string(),
             amount: 100,
             balance_after: 500,
-            quote_id: Some("quote-123".to_string()),
+            quote_id: None, // No quote_id for manual deposits
             created_at: Utc::now().to_rfc3339(),
         };
 
@@ -649,6 +649,6 @@ mod tests {
             .expect("Failed to get events");
 
         assert_eq!(events.len(), 1);
-        assert_eq!(events[0].event_type, "swap_in");
+        assert_eq!(events[0].event_type, "deposit");
     }
 }

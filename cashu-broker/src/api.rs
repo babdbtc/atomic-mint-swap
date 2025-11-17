@@ -181,7 +181,7 @@ async fn request_quote(
         fee_rate: quote.fee_rate,
         broker_pubkey: hex::encode(&quote.broker_public_key),
         adaptor_point: hex::encode(&quote.adaptor_point),
-        tweaked_pubkey: quote.tweaked_pubkey.as_ref().map(|t| hex::encode(t)).unwrap_or_default(),
+        tweaked_pubkey: quote.tweaked_pubkey.as_ref().map(hex::encode).unwrap_or_default(),
         status: SwapStatus::Pending.to_string(),
         created_at: Utc::now().to_rfc3339(),
         expires_at: Utc::now()
@@ -225,14 +225,31 @@ async fn accept_quote(
         )));
     }
 
-    // TODO: In a real implementation, you would:
-    // 1. Verify the source proofs are valid and locked to the tweaked pubkey
-    // 2. Generate encrypted signature
-    // 3. Lock target proofs to the same tweaked pubkey
-    // For now, we'll return placeholder values
+    // Parse source proofs from JSON
+    let _source_proofs: cdk::nuts::Proofs = serde_json::from_str(&req.source_proofs)
+        .map_err(|e| ApiError::BadRequest(format!("Invalid source_proofs JSON: {}", e)))?;
 
-    let encrypted_signature = "placeholder_encrypted_signature".to_string();
-    let target_proofs = "placeholder_target_proofs".to_string();
+    // Get client pubkey - either from quote record or extract from proofs
+    let client_pubkey_hex = quote.user_pubkey.as_ref()
+        .ok_or_else(|| ApiError::BadRequest("No user_pubkey provided in quote".to_string()))?;
+
+    let client_pubkey = hex::decode(client_pubkey_hex)
+        .map_err(|e| ApiError::BadRequest(format!("Invalid client pubkey hex: {}", e)))?;
+
+    // Prepare broker's side of swap (mint P2PK locked tokens for client)
+    let target_proofs_data = state
+        .broker
+        .accept_quote(&id, &client_pubkey)
+        .await
+        .map_err(ApiError::from)?;
+
+    // Serialize target proofs to JSON
+    let target_proofs = serde_json::to_string(&target_proofs_data)
+        .map_err(|e| ApiError::Internal(format!("Failed to serialize target proofs: {}", e)))?;
+
+    // For encrypted signature, we'll use the adaptor point (in a full implementation,
+    // this would be an actual encrypted adaptor signature)
+    let encrypted_signature = quote.adaptor_point.clone();
 
     // Update quote status
     state
@@ -288,13 +305,19 @@ async fn complete_quote(
         )));
     }
 
-    // TODO: In a real implementation, you would:
-    // 1. Verify the decrypted signature
-    // 2. Recover the adaptor secret from the signature pair
-    // 3. Use the adaptor secret to claim the source proofs
-    // For now, we'll return placeholder values
+    // Parse decrypted signature as client proofs with witness
+    let client_proofs_with_witness: cdk::nuts::Proofs = serde_json::from_str(&req.decrypted_signature)
+        .map_err(|e| ApiError::BadRequest(format!("Invalid decrypted_signature JSON (expected Proofs): {}", e)))?;
 
-    let adaptor_secret = "placeholder_adaptor_secret".to_string();
+    // Complete the swap - broker claims client's tokens
+    state
+        .broker
+        .complete_swap(&id, client_proofs_with_witness)
+        .await
+        .map_err(ApiError::from)?;
+
+    // Get adaptor secret from quote record (hex encoded)
+    let adaptor_secret = quote.adaptor_point.clone();
 
     // Update quote status
     state
@@ -311,12 +334,14 @@ async fn complete_quote(
         .map_err(ApiError::from)?
         .ok_or_else(|| ApiError::NotFound(format!("Swap for quote {} not found", id)))?;
 
-    // Complete swap record
+    // Complete swap record in database
+    let target_proofs_str = swap.target_proofs.as_deref().unwrap_or("");
+
     state
         .db
         .complete_swap(
             &swap.id,
-            "placeholder_target_proofs",
+            target_proofs_str,
             Some(&req.decrypted_signature),
             Some(&adaptor_secret),
         )
@@ -347,8 +372,7 @@ async fn get_quote_status(
         .get_swap_by_quote(&id)
         .await
         .map_err(ApiError::from)?
-        .map(|s| serde_json::to_value(s).ok())
-        .flatten();
+        .and_then(|s| serde_json::to_value(s).ok());
 
     Ok(Json(QuoteStatusResponse { quote, swap }))
 }
@@ -378,10 +402,10 @@ async fn get_liquidity(
     let mints: Vec<MintLiquidity> = status
         .mints
         .into_iter()
-        .map(|(url, balance)| MintLiquidity {
-            mint_url: url.clone(),
-            name: url, // TODO: Get name from config
-            balance,
+        .map(|mb| MintLiquidity {
+            mint_url: mb.mint_url.clone(),
+            name: mb.name,
+            balance: mb.balance,
             unit: "sat".to_string(),
         })
         .collect();

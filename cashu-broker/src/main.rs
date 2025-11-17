@@ -1,6 +1,6 @@
 use cashu_broker::{api, AppState, Broker, Config, Database};
 use std::sync::Arc;
-use tracing::{info, Level};
+use tracing::info;
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
 #[tokio::main]
@@ -25,7 +25,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Initialize broker
     let broker_config = cashu_broker::types::BrokerConfig {
-        mints: config.mints.clone(),
+        mints: config.mints.iter().map(|m| cashu_broker::MintConfig {
+            mint_url: m.mint_url.clone(),
+            name: m.name.clone(),
+            unit: m.unit.clone(),
+        }).collect(),
         fee_rate: config.fee_rate,
         min_swap_amount: config.min_swap_amount,
         max_swap_amount: config.max_swap_amount,
@@ -47,7 +51,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     // Create router
-    let app = api::create_router(state, config.cors_origins);
+    let app = api::create_router(state, config.cors_origins.clone());
 
     // Start HTTP server
     let addr = config.server_address();
