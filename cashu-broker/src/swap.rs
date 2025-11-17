@@ -76,6 +76,12 @@ impl SwapCoordinator {
         let adaptor_point_bytes = point_to_compressed_bytes(&adaptor_point);
         let broker_pubkey_bytes = point_to_compressed_bytes(&broker_pubkey_point);
 
+        // Calculate tweaked pubkey: P' = P + T (broker_pubkey + adaptor_point)
+        let tweaked_pubkey_point = &broker_pubkey_point + &adaptor_point;
+        let tweaked_pubkey_bytes = point_to_compressed_bytes(&tweaked_pubkey_point);
+
+        let expires_at = SystemTime::now() + Duration::from_secs(self.config.quote_expiry_seconds);
+
         let quote = SwapQuote {
             quote_id: Self::generate_quote_id(),
             from_mint: request.from_mint,
@@ -86,8 +92,10 @@ impl SwapCoordinator {
             fee_rate: self.config.fee_rate,
             broker_public_key: broker_pubkey_bytes,
             adaptor_point: adaptor_point_bytes,
+            tweaked_pubkey: Some(tweaked_pubkey_bytes),
             adaptor_secret: scalar_to_bytes(&adaptor_secret),
-            expires_at: SystemTime::now() + Duration::from_secs(self.config.quote_expiry_seconds),
+            expires_in: self.config.quote_expiry_seconds,
+            expires_at,
             status: SwapStatus::Pending,
         };
 

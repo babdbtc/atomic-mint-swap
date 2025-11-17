@@ -9,7 +9,7 @@ When Alice uses Mint A and Bob uses Mint B, but Bob wants to pay Alice, a broker
 1. **Bob** has ecash from Mint B
 2. **Alice** wants to receive ecash from Mint A
 3. **Broker** holds liquidity on both Mint A and Mint B
-4. **Bob** swaps his Mint B ecash with the broker to get Mint A ecash (0.5% fee)
+4. **Bob** swaps his Mint B ecash with the broker to get Mint A ecash (fee applies)
 5. **Bob** pays Alice with the Mint A ecash
 
 This enables cross-mint payments **without Lightning transactions** and with **atomic swap guarantees**.
@@ -21,63 +21,46 @@ This enables cross-mint payments **without Lightning transactions** and with **a
 - **Fee-Based Liquidity**: Broker earns fees for providing liquidity
 - **NUT-11 P2PK**: Uses Cashu's Pay-to-Public-Key standard
 - **Multi-Mint Support**: Manages liquidity across multiple mints
+- **Production-Ready**: HTTP API, database persistence, metrics, and Docker support
 
 ## Project Status
 
-🚀 **Rust Implementation - Core Complete!**
+🚀 **Production Implementation Complete!**
 
-**Primary Implementation** (Production-ready foundation):
+**Core Features**:
 - [x] Schnorr adaptor signatures (schnorr_fun)
 - [x] CDK integration for P2PK tokens and wallets
 - [x] Async liquidity management across multiple mints
 - [x] Swap coordinator with adaptor signatures
 - [x] Main broker service ("Charlie")
-- [x] Working example demonstrating the full flow
+- [x] HTTP/REST API (axum framework)
+- [x] Database persistence (SQLite)
+- [x] Metrics and monitoring
+- [x] Comprehensive test suite
+- [x] Docker deployment
 
-**Next Steps** (Phases 4-5):
+**Next Steps** (Phase 4+):
 - [ ] Nostr service announcements and discovery
-- [ ] HTTP/REST or gRPC API
-- [ ] Database persistence
-- [ ] Metrics and monitoring
-- [ ] Full integration tests
-
-✅ **TypeScript Reference Implementation**
-
-The TypeScript version (`/src` and `/tests`) served as the research prototype and now acts as a reference specification. It remains fully functional and demonstrates the complete atomic swap flow end-to-end.
-
-See [`cashu-broker/README.md`](./cashu-broker/README.md) for Rust details.
+- [ ] gRPC API
+- [ ] Advanced security features (rate limiting, auth)
+- [ ] Multi-hop swaps
 
 ## Quick Start
 
-### TypeScript Prototype
+### Prerequisites
 
-```bash
-# Install dependencies
-npm install
+- Rust toolchain (1.70+)
+- Docker (optional, for running local mints)
 
-# Start local Cashu mints (requires Docker)
-./scripts/setup-local-mints.sh
-
-# Run the working broker demo
-npx tsx tests/test-broker.ts
-```
-
-This demonstrates:
-- Bob minting 8 sats on Mint B
-- Bob requesting a swap quote from the broker
-- Broker locking ecash for atomic swap
-- Bob revealing adaptor secret by swapping
-- Broker completing the swap and earning a 1 sat fee (0.5%)
-
-### Rust Implementation (Primary)
+### Running the Broker
 
 ```bash
 cd cashu-broker
 
-# Build the broker (requires Rust toolchain)
+# Build the broker
 cargo build --release
 
-# Run the broker example
+# Run the example broker
 cargo run --example run_broker
 
 # Run tests
@@ -92,46 +75,96 @@ This demonstrates:
 - Full async implementation using Tokio
 - CDK integration for Cashu operations
 
+### Running the HTTP Server
+
+```bash
+cd cashu-broker
+
+# Configure environment
+cp .env.example .env
+# Edit .env with your mint URLs
+
+# Start the server
+cargo run --release
+
+# In another terminal, test the API
+curl http://localhost:3000/health
+curl http://localhost:3000/metrics
+curl http://localhost:3000/liquidity
+
+# Request a swap quote
+curl -X POST http://localhost:3000/quote \
+  -H "Content-Type: application/json" \
+  -d '{
+    "source_mint": "http://localhost:3338",
+    "target_mint": "http://localhost:3339",
+    "amount": 100
+  }'
+```
+
+### Using Docker
+
+```bash
+cd cashu-broker
+
+# Build and run with Docker Compose
+docker-compose up -d
+
+# Check logs
+docker-compose logs -f broker
+
+# Stop
+docker-compose down
+```
+
 ## Architecture
 
 ```
-src/
-├── broker/
-│   ├── charlie.ts           # Main broker service
-│   ├── liquidity.ts         # Multi-mint liquidity management
-│   ├── swap-coordinator.ts  # Atomic swap execution
-│   └── types.ts             # Broker type definitions
-├── cashu/
-│   ├── mint-client.ts       # Mint API integration
-│   ├── wallet.ts            # Token minting/swapping
-│   └── types.ts             # Cashu type definitions
-├── crypto/
-│   ├── adaptor.ts           # Schnorr adaptor signatures
-│   └── utils.ts             # Cryptographic utilities
-└── index.ts                 # Public exports
+cashu-broker/
+├── src/
+│   ├── main.rs              # HTTP server entry point
+│   ├── lib.rs               # Public API and module exports
+│   ├── api.rs               # HTTP endpoints (REST API)
+│   ├── broker.rs            # Main broker service ("Charlie")
+│   ├── swap.rs              # Swap coordinator with P2PK
+│   ├── liquidity.rs         # Multi-mint liquidity management
+│   ├── adaptor.rs           # Schnorr adaptor signatures
+│   ├── db.rs                # SQLite database persistence
+│   ├── config.rs            # Configuration management
+│   ├── types.rs             # Core data types
+│   └── error.rs             # Error handling types
+├── migrations/              # Database migrations
+├── tests/                   # Integration tests
+├── examples/                # Example usage
+├── Cargo.toml               # Dependencies
+└── README.md                # Detailed documentation
 ```
 
 ## How It Works
 
 ### 1. Quote Request
-Bob requests a quote to swap 8 sats from Mint B to Mint A:
-```typescript
-const quote = await charlie.requestQuote({
-  clientId: 'bob',
-  fromMint: MINT_B_URL,
-  toMint: MINT_A_URL,
-  amount: 8,
-  clientPublicKey: bobPubkey,
-});
-// Quote: input=8 sats, output=7 sats, fee=1 sat (0.5%)
+Bob requests a quote to swap ecash from Mint B to Mint A:
+
+```rust
+let quote = broker.request_quote(SwapRequest {
+    source_mint: "http://mint-b.test".to_string(),
+    target_mint: "http://mint-a.test".to_string(),
+    amount: 1000, // sats
+}).await?;
+
+// Quote includes:
+// - input_amount: 1000 sats
+// - output_amount: 990 sats (1% fee)
+// - fee: 10 sats
+// - adaptor_point: T (for locking)
 ```
 
 ### 2. Atomic Swap Setup
 Both parties lock tokens to tweaked pubkeys:
-- Bob locks 8 sats to `Charlie + T` on Mint B
-- Charlie locks 7 sats to `Bob + T` on Mint A
+- Bob locks 1000 sats to `Charlie + T` on Mint B
+- Charlie locks 990 sats to `Bob + T` on Mint A
 
-Where `T` is the adaptor point.
+Where `T` is the adaptor point derived from secret `t`.
 
 ### 3. Secret Revelation
 Bob spends Charlie's tokens on Mint A by signing with `Bob + t` (adaptor secret).
@@ -144,43 +177,129 @@ Both swaps complete atomically - either both succeed or neither does.
 
 ## Configuration
 
-```typescript
-const charlie = new CharlieBroker({
-  mints: [
-    { mintUrl: 'http://localhost:3338', name: 'Mint A', unit: 'sat' },
-    { mintUrl: 'http://localhost:3339', name: 'Mint B', unit: 'sat' },
-  ],
-  feeRate: 0.005,        // 0.5%
-  minSwapAmount: 1,       // 1 sat minimum
-  maxSwapAmount: 10000,   // 10,000 sats maximum
-});
+Create a `.env` file in the `cashu-broker/` directory:
 
-// Initialize with liquidity
-await charlie.initialize(100); // 100 sats on each mint
+```bash
+# Mint Configuration (JSON array)
+MINTS='[
+  {"mint_url":"http://localhost:3338","name":"Mint A","unit":"sat"},
+  {"mint_url":"http://localhost:3339","name":"Mint B","unit":"sat"}
+]'
+
+# Fee Configuration
+FEE_RATE=0.01                    # 1% fee
+MIN_SWAP_AMOUNT=1                # 1 sat minimum
+MAX_SWAP_AMOUNT=1000000          # 1M sats maximum
+QUOTE_EXPIRY_SECONDS=300         # 5 minutes
+
+# Server Configuration
+HOST=127.0.0.1
+PORT=3000
+CORS_ORIGINS=*
+
+# Database
+DATABASE_URL=sqlite://cashu-broker.db
+
+# Logging
+RUST_LOG=info
 ```
+
+Or configure programmatically:
+
+```rust
+use cashu_broker::{Broker, types::BrokerConfig, types::MintConfig};
+
+let config = BrokerConfig {
+    mints: vec![
+        MintConfig {
+            mint_url: "http://localhost:3338".to_string(),
+            name: "Mint A".to_string(),
+            unit: "sat".to_string(),
+        },
+        MintConfig {
+            mint_url: "http://localhost:3339".to_string(),
+            name: "Mint B".to_string(),
+            unit: "sat".to_string(),
+        },
+    ],
+    fee_rate: 0.01,              // 1%
+    min_swap_amount: 1,
+    max_swap_amount: 1_000_000,
+    quote_expiry_seconds: 300,
+};
+
+let broker = Broker::new(config).await?;
+```
+
+## API Endpoints
+
+The broker exposes the following HTTP endpoints:
+
+- `GET /health` - Health check
+- `GET /metrics` - Performance metrics
+- `GET /liquidity` - Current liquidity status
+- `POST /quote` - Request swap quote
+- `POST /quote/:id/accept` - Accept quote and lock tokens
+- `POST /quote/:id/complete` - Complete swap
+- `GET /quote/:id` - Get quote status
+- `GET /quotes` - List all quotes (with filters)
+
+See [`cashu-broker/README.md`](./cashu-broker/README.md) for detailed API documentation.
 
 ## Documentation
 
-- [Quick Start Guide](./docs/QUICK-START.md)
-- [Protocol Specification](./docs/PROTOCOL_SPECIFICATION.md)
-- [Atomic Swap Analysis](./docs/ATOMIC_SWAP_ANALYSIS.md)
-- [Current Status](./docs/STATUS.md)
+- [Broker README](./cashu-broker/README.md) - Detailed implementation guide
+- [Testing Guide](./cashu-broker/TESTING.md) - Test suite documentation
+- [Protocol Specification](./docs/PROTOCOL_SPECIFICATION.md) - Technical protocol details
+- [Atomic Swap Analysis](./docs/ATOMIC_SWAP_ANALYSIS.md) - Cryptographic analysis
+- [Quick Start Guide](./docs/QUICK-START.md) - Getting started
+- [Current Status](./docs/STATUS.md) - Project status
 
 ## Development
 
 ```bash
-# Run tests
-npm test
+# Navigate to broker directory
+cd cashu-broker
+
+# Run all tests
+cargo test
+
+# Run with logging
+RUST_LOG=debug cargo run --example run_broker
+
+# Run integration tests
+cargo test --test api_integration_test
+
+# Check code formatting
+cargo fmt --check
+
+# Run linter
+cargo clippy
+
+# Build optimized binary
+cargo build --release
+```
+
+## Testing
+
+The broker includes comprehensive tests:
+
+- **Unit Tests**: Database layer, adaptor signatures, core logic
+- **Integration Tests**: Full HTTP API testing
+- **Example Programs**: Runnable demonstrations
+
+```bash
+# Run all tests
+cargo test
+
+# Run with output
+cargo test -- --nocapture
 
 # Run specific test
-npx tsx tests/test-charlie-broker.ts
+cargo test test_request_quote_success
 
-# Run local mints
-./scripts/setup-local-mints.sh
-
-# Check mint status
-docker-compose ps
-docker-compose logs
+# See TESTING.md for more details
+cd cashu-broker && cat TESTING.md
 ```
 
 ## Security
@@ -190,21 +309,69 @@ docker-compose logs
 - Cryptography based on Schnorr adaptor signatures
 - Uses NUT-00 (BDHKE) and NUT-11 (P2PK) standards
 - Not formally audited
-- Do not use with large amounts
+- Do not use with large amounts in production
 
-## Next Steps
+**Security Features**:
+- Memory-safe Rust implementation
+- Thread-safe concurrent operations
+- Comprehensive error handling
+- Input validation on all endpoints
+- Database integrity constraints
 
-1. **Nostr Integration**: Enable broker service announcements
-2. **Client API**: Build user-friendly swap client
-3. **Fee Optimization**: Dynamic fee rates based on liquidity
-4. **Multi-Hop Swaps**: Chain multiple brokers for wider mint coverage
+## Deployment
+
+### Docker
+
+```bash
+cd cashu-broker
+
+# Build image
+docker build -t cashu-broker .
+
+# Run container
+docker run -p 3000:3000 \
+  -e MINTS='[...]' \
+  -e DATABASE_URL=sqlite://data/broker.db \
+  -v $(pwd)/data:/data \
+  cashu-broker
+```
+
+### Systemd Service
+
+```ini
+[Unit]
+Description=Cashu Broker Service
+After=network.target
+
+[Service]
+Type=simple
+User=cashu-broker
+WorkingDirectory=/opt/cashu-broker
+ExecStart=/opt/cashu-broker/target/release/cashu-broker
+Restart=always
+Environment="RUST_LOG=info"
+EnvironmentFile=/opt/cashu-broker/.env
+
+[Install]
+WantedBy=multi-user.target
+```
+
+## Performance
+
+The Rust implementation provides:
+- **High throughput**: Async I/O with Tokio
+- **Low latency**: Zero-cost abstractions
+- **Memory safety**: No buffer overflows or leaks
+- **Predictable performance**: No garbage collection pauses
+- **Single binary**: Easy deployment
 
 ## Contributing
 
 Contributions welcome! Please:
-1. Read the protocol specification
+1. Read the protocol specification in `docs/`
 2. Check existing issues
 3. Submit PRs with tests
+4. Follow Rust best practices (cargo fmt, cargo clippy)
 
 ## License
 
@@ -212,6 +379,7 @@ MIT
 
 ## Acknowledgments
 
-- [Cashu Protocol](https://github.com/cashubtc/nuts)
-- [Scriptless Scripts](https://github.com/BlockstreamResearch/scriptless-scripts)
+- [Cashu Protocol](https://github.com/cashubtc/nuts) - Ecash protocol
+- [Cashu Development Kit (CDK)](https://github.com/cashubtc/cdk) - Rust implementation
+- [Scriptless Scripts](https://github.com/BlockstreamResearch/scriptless-scripts) - Adaptor signatures
 - Adaptor signature research community

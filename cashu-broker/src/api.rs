@@ -156,9 +156,11 @@ async fn request_quote(
 ) -> Result<Json<QuoteResponse>, ApiError> {
     // Create swap request
     let swap_request = SwapRequest {
-        source_mint: req.source_mint.clone(),
-        target_mint: req.target_mint.clone(),
+        client_id: None,  // Anonymous for HTTP API
+        from_mint: req.source_mint.clone(),
+        to_mint: req.target_mint.clone(),
         amount: req.amount,
+        client_public_key: req.user_pubkey.as_ref().and_then(|hex_str| hex::decode(hex_str).ok()),
     };
 
     // Request quote from broker
@@ -170,16 +172,16 @@ async fn request_quote(
 
     // Save quote to database
     let quote_record = QuoteRecord {
-        id: quote.id.clone(),
-        source_mint: quote.source_mint.clone(),
-        target_mint: quote.target_mint.clone(),
-        amount_in: quote.amount_in as i64,
-        amount_out: quote.amount_out as i64,
+        id: quote.quote_id.clone(),
+        source_mint: quote.from_mint.clone(),
+        target_mint: quote.to_mint.clone(),
+        amount_in: quote.input_amount as i64,
+        amount_out: quote.output_amount as i64,
         fee: quote.fee as i64,
         fee_rate: quote.fee_rate,
-        broker_pubkey: hex::encode(&quote.broker_pubkey),
+        broker_pubkey: hex::encode(&quote.broker_public_key),
         adaptor_point: hex::encode(&quote.adaptor_point),
-        tweaked_pubkey: hex::encode(&quote.tweaked_pubkey),
+        tweaked_pubkey: quote.tweaked_pubkey.as_ref().map(|t| hex::encode(t)).unwrap_or_default(),
         status: SwapStatus::Pending.to_string(),
         created_at: Utc::now().to_rfc3339(),
         expires_at: Utc::now()

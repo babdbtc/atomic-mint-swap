@@ -59,7 +59,8 @@ impl Broker {
 
     /// Request a swap quote from the broker
     pub async fn request_quote(&self, request: SwapRequest) -> Result<SwapQuote> {
-        println!("\n📨 Swap request from {}", request.client_id);
+        let client_id = request.client_id.as_deref().unwrap_or("anonymous");
+        println!("\n📨 Swap request from {}", client_id);
         println!("   {} → {}", request.from_mint, request.to_mint);
         println!("   Amount: {} sats\n", request.amount);
 
