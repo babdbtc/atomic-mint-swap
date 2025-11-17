@@ -72,6 +72,33 @@ pub enum SwapStatus {
     Failed,
 }
 
+impl std::fmt::Display for SwapStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            SwapStatus::Pending => write!(f, "pending"),
+            SwapStatus::Accepted => write!(f, "accepted"),
+            SwapStatus::Completed => write!(f, "completed"),
+            SwapStatus::Expired => write!(f, "expired"),
+            SwapStatus::Failed => write!(f, "failed"),
+        }
+    }
+}
+
+impl std::str::FromStr for SwapStatus {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "pending" => Ok(SwapStatus::Pending),
+            "accepted" => Ok(SwapStatus::Accepted),
+            "completed" => Ok(SwapStatus::Completed),
+            "expired" => Ok(SwapStatus::Expired),
+            "failed" => Ok(SwapStatus::Failed),
+            _ => Err(format!("Invalid swap status: {}", s)),
+        }
+    }
+}
+
 /// Swap execution details (internal)
 #[derive(Debug, Clone)]
 pub struct SwapExecution {

@@ -21,6 +21,14 @@ secp256kfun = { version = "0.10", features = ["serde", "bincode"] }
 tokio = { version = "1", features = ["full"] }
 async-trait = "0.1"
 
+# HTTP server
+axum = "0.7"
+tower = "0.4"
+tower-http = { version = "0.5", features = ["cors", "trace"] }
+
+# Database
+sqlx = { version = "0.7", features = ["runtime-tokio", "sqlite", "migrate", "chrono", "uuid"] }
+
 # Error handling
 anyhow = "1.0"
 thiserror = "1.0"
@@ -31,12 +39,17 @@ serde_json = "1.0"
 
 # Logging
 tracing = "0.1"
-tracing-subscriber = "0.3"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+
+# Configuration
+dotenvy = "0.15"
 
 # Utilities
 hex = "0.4"
 sha2 = "0.10"
 rand = "0.8"
+uuid = { version = "1.6", features = ["v4", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
 
 [dev-dependencies]
 tokio-test = "0.4"
@@ -44,6 +57,10 @@ tokio-test = "0.4"
 [lib]
 name = "cashu_broker"
 path = "src/lib.rs"
+
+[[bin]]
+name = "cashu-broker"
+path = "src/main.rs"
 
 [[example]]
 name = "run_broker"

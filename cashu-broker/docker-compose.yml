@@ -1,0 +1,48 @@
+version: '3.8'
+
+services:
+  broker:
+    build: .
+    container_name: cashu-broker
+    ports:
+      - "3000:3000"
+    environment:
+      - HOST=0.0.0.0
+      - PORT=3000
+      - DATABASE_URL=sqlite:///app/data/broker.db
+      - LOG_LEVEL=info
+      - CORS_ORIGINS=*
+      - FEE_RATE=0.005
+      - MIN_SWAP_AMOUNT=1
+      - MAX_SWAP_AMOUNT=10000
+      - QUOTE_EXPIRY_SECONDS=300
+      # Configure your mints here
+      - MINTS=[{"mint_url":"http://localhost:3338","name":"Mint A","unit":"sat"},{"mint_url":"http://localhost:3339","name":"Mint B","unit":"sat"}]
+    volumes:
+      - broker-data:/app/data
+    restart: unless-stopped
+    networks:
+      - cashu-network
+
+  # Optional: PostgreSQL instead of SQLite for production
+  # Uncomment to use PostgreSQL
+  # postgres:
+  #   image: postgres:16-alpine
+  #   container_name: cashu-broker-db
+  #   environment:
+  #     - POSTGRES_USER=broker
+  #     - POSTGRES_PASSWORD=broker_password
+  #     - POSTGRES_DB=cashu_broker
+  #   volumes:
+  #     - postgres-data:/var/lib/postgresql/data
+  #   networks:
+  #     - cashu-network
+  #   restart: unless-stopped
+
+volumes:
+  broker-data:
+  # postgres-data:
+
+networks:
+  cashu-network:
+    driver: bridge
