@@ -5,11 +5,13 @@
 use crate::error::{BrokerError, Result};
 use crate::types::MintConfig;
 use cdk::amount::SplitTarget;
-use cdk::nuts::{CurrencyUnit, MintQuoteState, Proof, Proofs, State};
+use cdk::nuts::{CurrencyUnit, Proofs};
+use cdk::nuts::nut00::ProofsMethods;
 use cdk::wallet::Wallet;
 use cdk::Amount;
+use cdk_sqlite::wallet::memory;
+use rand::random;
 use std::collections::HashMap;
-use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::SystemTime;
 use tokio::sync::RwLock;
@@ -39,19 +41,20 @@ impl LiquidityManager {
         for mint in mints {
             // Create a wallet for each mint
             // TODO: In production, use persistent storage instead of memory
-            let localstore = cdk::wallet::localstore::memory::MemoryLocalStore::default();
+            let localstore = Arc::new(memory::empty().await
+                .map_err(|e| BrokerError::Cdk(format!("Failed to create memory store: {:?}", e)))?);
 
-            let seed = cdk::wallet::mnemonic::Mnemonic::generate(12)
-                .map_err(|e| BrokerError::Cdk(format!("Failed to generate mnemonic: {:?}", e)))?;
-
-            let mint_url = mint.mint_url.parse()
-                .map_err(|e| BrokerError::Cdk(format!("Invalid mint URL {}: {:?}", mint.mint_url, e)))?;
+            // Generate a random seed for the wallet
+            let mut seed = [0u8; 64];
+            for byte in seed.iter_mut() {
+                *byte = random();
+            }
 
             let wallet = Wallet::new(
                 &mint.mint_url,
                 CurrencyUnit::Sat,
-                Arc::new(localstore),
-                &seed.to_seed_normalized(""),
+                localstore,
+                seed,
                 None,
             )
             .map_err(|e| BrokerError::Cdk(format!("Failed to create wallet: {:?}", e)))?;
@@ -61,7 +64,7 @@ impl LiquidityManager {
                 MintLiquidity {
                     mint_url: mint.mint_url.clone(),
                     balance: 0,
-                    proofs: Proofs::empty(),
+                    proofs: vec![],
                     last_updated: SystemTime::now(),
                 },
             );
@@ -86,7 +89,7 @@ impl LiquidityManager {
         let liq = self.liquidity.read().await;
         liq.get(mint_url)
             .map(|l| l.proofs.clone())
-            .unwrap_or_else(Proofs::empty)
+            .unwrap_or_else(Vec::new)
     }
 
     /// Add proofs to liquidity (e.g., after minting or receiving)
@@ -96,7 +99,9 @@ impl LiquidityManager {
             .get_mut(mint_url)
             .ok_or_else(|| BrokerError::UnsupportedMint(mint_url.to_string()))?;
 
-        let amount: u64 = proofs.iter().map(|p| p.amount.into()).sum();
+        let amount: u64 = proofs.total_amount()
+            .map_err(|e| BrokerError::Cdk(format!("Failed to calculate total amount: {:?}", e)))?
+            .into();
         mint_liq.proofs.extend(proofs);
         mint_liq.balance += amount;
         mint_liq.last_updated = SystemTime::now();
@@ -116,7 +121,9 @@ impl LiquidityManager {
             .get_mut(mint_url)
             .ok_or_else(|| BrokerError::UnsupportedMint(mint_url.to_string()))?;
 
-        let amount: u64 = proofs_to_remove.iter().map(|p| p.amount.into()).sum();
+        let amount: u64 = proofs_to_remove.total_amount()
+            .map_err(|e| BrokerError::Cdk(format!("Failed to calculate total amount: {:?}", e)))?
+            .into();
 
         // Remove proofs by secret (unique identifier)
         let secrets_to_remove: Vec<_> = proofs_to_remove.iter().map(|p| &p.secret).collect();
@@ -143,7 +150,7 @@ impl LiquidityManager {
             .ok_or_else(|| BrokerError::UnsupportedMint(mint_url.to_string()))?;
 
         let mut available = mint_liq.proofs.clone();
-        let mut selected = Proofs::empty();
+        let mut selected: Proofs = vec![];
         let mut total: u64 = 0;
 
         // Simple greedy selection (largest first)

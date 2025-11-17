@@ -1,11 +1,10 @@
 use crate::error::BrokerError;
-use crate::types::{SwapQuote, SwapStatus};
-use chrono::{DateTime, Utc};
+use crate::types::SwapStatus;
+use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePool, SqlitePoolOptions};
 use sqlx::{FromRow, Row};
 use std::str::FromStr;
-use uuid::Uuid;
 
 /// Database connection pool
 #[derive(Clone)]
