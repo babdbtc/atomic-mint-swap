@@ -1,8 +1,10 @@
 # Cashu Broker (Rust Implementation)
 
-> **Status**: 🚧 Early Development - Core adaptor signatures implemented
+> **Status**: ✅ Core Implementation Complete - Ready for Testing
 
 Production-grade Rust implementation of the Cashu broker service for atomic ecash swaps between different mints.
+
+**This is now the primary implementation.** The TypeScript version in `/src` serves as a reference specification.
 
 ## Why Rust?
 
@@ -23,13 +25,13 @@ cashu-broker/
 │   ├── adaptor.rs       # ✅ Schnorr adaptor signatures (schnorr_fun)
 │   ├── types.rs         # ✅ Core data types
 │   ├── error.rs         # ✅ Error handling
-│   ├── liquidity.rs     # 🚧 TODO: Multi-mint liquidity management
-│   ├── swap.rs          # 🚧 TODO: Swap coordinator
-│   └── broker.rs        # 🚧 TODO: Main broker service
+│   ├── liquidity.rs     # ✅ Multi-mint liquidity management
+│   ├── swap.rs          # ✅ Swap coordinator with P2PK integration
+│   └── broker.rs        # ✅ Main broker service ("Charlie")
 ├── examples/
-│   └── run_broker.rs    # 🚧 TODO: Example broker
+│   └── run_broker.rs    # ✅ Working broker demonstration
 └── tests/
-    └── integration.rs   # 🚧 TODO: Integration tests
+    └── integration.rs   # 🚧 TODO: Full end-to-end integration tests
 ```
 
 ## Dependencies
@@ -50,30 +52,46 @@ cashu-broker/
 
 ## Implementation Status
 
-### ✅ Completed
+### ✅ Phase 1-3: Core Broker (COMPLETE)
 - [x] Project structure and dependencies
 - [x] Error types and Result wrappers
 - [x] Core data types (BrokerConfig, SwapQuote, etc.)
-- [x] Adaptor signature primitives wrapper
+- [x] Adaptor signature primitives
   - Encrypted signature creation
   - Signature verification
   - Signature decryption
   - Adaptor secret recovery
   - Key tweaking operations
+- [x] Liquidity manager
+  - Multi-mint wallet management
+  - Balance tracking with RwLock for concurrent access
+  - Token selection (greedy algorithm)
+  - Mint/receive via CDK wallet integration
+- [x] Swap coordinator
+  - Quote generation with fee calculation
+  - P2PK token locking to tweaked public keys
+  - Adaptor signature-based atomic swaps
+  - Quote expiry management
+- [x] Main broker service
+  - Full Charlie broker implementation
+  - Initialize liquidity across mints
+  - Request/accept/complete swap flow
+  - Status reporting
 
-### 🚧 In Progress
-- [ ] Liquidity manager (async port from TypeScript)
-- [ ] Swap coordinator (with proper error handling)
-- [ ] Main broker service (tokio runtime)
-- [ ] Integration tests with local mints
+### 🚧 Phase 4: Nostr Integration (NEXT)
+- [ ] Nostr service announcements (NIP-01)
+- [ ] Encrypted swap request/response (NIP-04)
+- [ ] Broker discovery protocol
+- [ ] Real-time quote updates
 
-### 📋 Planned
-- [ ] Nostr service announcements
-- [ ] HTTP API (axum/actix-web)
+### 📋 Phase 5: Production Features
+- [ ] HTTP/REST API (axum)
 - [ ] gRPC API for programmatic access
 - [ ] Metrics and monitoring (Prometheus)
 - [ ] Database persistence (SQLite/PostgreSQL)
 - [ ] CLI tool for broker management
+- [ ] Docker deployment
+- [ ] Comprehensive integration tests
 
 ## Building
 
@@ -84,7 +102,7 @@ cargo build --release
 # Run tests
 cargo test
 
-# Run example (once implemented)
+# Run example
 cargo run --example run_broker
 ```
 

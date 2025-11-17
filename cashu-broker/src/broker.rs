@@ -1,37 +1,44 @@
-//! Main broker service
+//! Main broker service - Charlie
 //!
-//! TODO: Port from TypeScript implementation at ../src/broker/
+//! Facilitates atomic swaps between different Cashu mints for a fee
 
 use crate::error::Result;
 use crate::liquidity::LiquidityManager;
 use crate::swap::SwapCoordinator;
 use crate::types::{BrokerConfig, SwapQuote, SwapRequest};
-use tracing::{info, warn};
+use cdk::nuts::Proofs;
+use std::sync::Arc;
+use tokio::sync::RwLock;
+use tracing::info;
 
-/// The main broker service
+/// The main broker service ("Charlie")
 ///
-/// Coordinates liquidity management and swap execution
+/// Coordinates liquidity management and swap execution across multiple Cashu mints
 pub struct Broker {
     config: BrokerConfig,
-    liquidity: LiquidityManager,
-    swap_coordinator: SwapCoordinator,
+    liquidity: Arc<LiquidityManager>,
+    swap_coordinator: Arc<SwapCoordinator>,
 }
 
 impl Broker {
     /// Create a new broker instance
     pub async fn new(config: BrokerConfig) -> Result<Self> {
-        info!("Initializing Cashu broker");
-        info!("Fee rate: {:.2}%", config.fee_rate * 100.0);
-        info!("Min swap: {} sats", config.min_swap_amount);
-        info!("Max swap: {} sats", config.max_swap_amount);
-        info!("Supported mints: {}", config.mints.len());
+        println!("\n{}", "=".repeat(70));
+        println!("🤖 CHARLIE BROKER SERVICE");
+        println!("{}", "=".repeat(70));
+        println!("Fee Rate: {:.2}%", config.fee_rate * 100.0);
+        println!("Min Swap: {} sats", config.min_swap_amount);
+        println!("Max Swap: {} sats", config.max_swap_amount);
+        println!("Supported Mints: {}", config.mints.len());
 
         for mint in &config.mints {
-            info!("  - {} ({})", mint.name, mint.mint_url);
+            println!("  - {} ({})", mint.name, mint.mint_url);
         }
 
-        let liquidity = LiquidityManager::new(config.mints.clone());
-        let swap_coordinator = SwapCoordinator::new(config.clone());
+        println!("{}\n", "=".repeat(70));
+
+        let liquidity = Arc::new(LiquidityManager::new(config.mints.clone()).await?);
+        let swap_coordinator = Arc::new(SwapCoordinator::new(config.clone()));
 
         Ok(Self {
             config,
@@ -46,46 +53,51 @@ impl Broker {
     /// - Receive liquidity from users depositing ecash
     /// - Mint via Lightning deposits
     /// - Bootstrap with initial capital
-    pub async fn initialize(&mut self, amount_per_mint: u64) -> Result<()> {
-        info!("Initializing liquidity: {} sats per mint", amount_per_mint);
-        self.liquidity.initialize_liquidity(amount_per_mint).await?;
-        Ok(())
+    pub async fn initialize(&self, amount_per_mint: u64) -> Result<()> {
+        self.liquidity.initialize_liquidity(amount_per_mint).await
     }
 
     /// Request a swap quote from the broker
-    pub async fn request_quote(&mut self, request: SwapRequest) -> Result<SwapQuote> {
-        info!("Swap request from {}: {} → {}, amount: {} sats",
-            request.client_id,
-            request.from_mint,
-            request.to_mint,
-            request.amount
-        );
+    pub async fn request_quote(&self, request: SwapRequest) -> Result<SwapQuote> {
+        println!("\n📨 Swap request from {}", request.client_id);
+        println!("   {} → {}", request.from_mint, request.to_mint);
+        println!("   Amount: {} sats\n", request.amount);
 
-        self.swap_coordinator.create_quote(request, &self.liquidity).await
+        self.swap_coordinator
+            .create_quote(request, &self.liquidity)
+            .await
     }
 
     /// Accept a quote and prepare the broker's side of the swap
-    pub async fn accept_quote(&mut self, quote_id: &str, client_pubkey: &[u8]) -> Result<Vec<u8>> {
-        info!("Client accepted quote {}", quote_id);
-        self.swap_coordinator.prepare_swap(quote_id, client_pubkey).await
+    ///
+    /// Returns the P2PK locked tokens that the broker creates for the client
+    pub async fn accept_quote(&self, quote_id: &str, client_pubkey: &[u8]) -> Result<Proofs> {
+        println!("\n✅ Client accepted quote {}", quote_id);
+
+        self.swap_coordinator
+            .prepare_swap(quote_id, client_pubkey, &self.liquidity)
+            .await
     }
 
-    /// Complete a swap after client provides their tokens
-    pub async fn complete_swap(&mut self, quote_id: &str, client_tokens: Vec<u8>) -> Result<()> {
-        info!("Completing swap {}", quote_id);
-        self.swap_coordinator.complete_swap(quote_id, client_tokens).await
+    /// Complete a swap after client provides their tokens with witness
+    pub async fn complete_swap(&self, quote_id: &str, client_tokens: Proofs) -> Result<()> {
+        self.swap_coordinator
+            .complete_swap(quote_id, client_tokens, &self.liquidity)
+            .await
     }
 
     /// Get current liquidity status
-    pub fn liquidity_status(&self) -> LiquidityStatus {
-        let mint_balances: Vec<MintBalance> = self.config.mints
-            .iter()
-            .map(|mint| MintBalance {
+    pub async fn get_liquidity_status(&self) -> LiquidityStatus {
+        let mut mint_balances = Vec::new();
+
+        for mint in &self.config.mints {
+            let balance = self.liquidity.get_balance(&mint.mint_url).await;
+            mint_balances.push(MintBalance {
                 mint_url: mint.mint_url.clone(),
                 name: mint.name.clone(),
-                balance: self.liquidity.get_balance(&mint.mint_url),
-            })
-            .collect();
+                balance,
+            });
+        }
 
         let total_balance: u64 = mint_balances.iter().map(|mb| mb.balance).sum();
 
@@ -95,20 +107,20 @@ impl Broker {
         }
     }
 
-    /// Print broker status to logs
-    pub fn print_status(&self) {
-        info!("=".repeat(70));
-        info!("BROKER STATUS");
-        info!("=".repeat(70));
+    /// Get broker configuration
+    pub fn get_config(&self) -> &BrokerConfig {
+        &self.config
+    }
 
-        let status = self.liquidity_status();
-        info!("Broker Liquidity:");
-        for mint in &status.mints {
-            info!("  {}: {} sats", mint.mint_url, mint.balance);
-        }
-        info!("Total: {} sats", status.total_balance);
+    /// Print broker status
+    pub async fn print_status(&self) {
+        println!("\n{}", "=".repeat(70));
+        println!("📊 CHARLIE STATUS");
+        println!("{}", "=".repeat(70));
 
-        info!("=".repeat(70));
+        self.liquidity.print_liquidity().await;
+
+        println!("{}\n", "=".repeat(70));
     }
 
     /// Run the broker service
@@ -118,12 +130,21 @@ impl Broker {
     pub async fn run(&self) -> Result<()> {
         info!("Broker service is running...");
 
-        // TODO: Start HTTP/gRPC server
-        // TODO: Announce on Nostr
-        // TODO: Handle incoming swap requests
-        // TODO: Monitor liquidity and rebalance
+        // TODO: Phase 4 - Nostr Integration
+        // - Announce broker service on Nostr
+        // - Listen for encrypted swap requests
+        // - Respond with quotes
 
-        todo!("Implement broker service runtime")
+        // TODO: Phase 5 - Production API
+        // - HTTP/REST or gRPC endpoints
+        // - Database persistence
+        // - Metrics and monitoring
+
+        // For now, just keep running
+        loop {
+            tokio::time::sleep(tokio::time::Duration::from_secs(60)).await;
+            self.print_status().await;
+        }
     }
 }
 
@@ -166,7 +187,8 @@ mod tests {
         };
 
         let broker = Broker::new(config).await.unwrap();
-        let status = broker.liquidity_status();
+        let status = broker.get_liquidity_status().await;
         assert_eq!(status.mints.len(), 2);
+        assert_eq!(status.total_balance, 0);
     }
 }

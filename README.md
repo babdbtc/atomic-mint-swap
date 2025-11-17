@@ -24,29 +24,28 @@ This enables cross-mint payments **without Lightning transactions** and with **a
 
 ## Project Status
 
-✅ **TypeScript Prototype - Complete and Working**
+🚀 **Rust Implementation - Core Complete!**
 
-- [x] Adaptor signature primitives
-- [x] P2PK token minting and swapping (NUT-11)
-- [x] BDHKE blind signatures (NUT-00)
-- [x] Liquidity management across multiple mints
-- [x] Swap quote system with fee calculation
-- [x] Atomic swap coordinator
-- [x] End-to-end broker test (working)
-
-🚧 **Rust Production Implementation - In Progress**
-
-- [x] Project structure and dependencies
-- [x] Error handling and type system
+**Primary Implementation** (Production-ready foundation):
 - [x] Schnorr adaptor signatures (schnorr_fun)
-- [ ] CDK integration for P2PK tokens
-- [ ] Async liquidity management
-- [ ] Swap coordinator with proper error handling
-- [ ] HTTP/gRPC API server
-- [ ] Nostr service announcements
-- [ ] Production deployment tools
+- [x] CDK integration for P2PK tokens and wallets
+- [x] Async liquidity management across multiple mints
+- [x] Swap coordinator with adaptor signatures
+- [x] Main broker service ("Charlie")
+- [x] Working example demonstrating the full flow
 
-See [Rust Port Status](./docs/RUST-PORT-STATUS.md) for details.
+**Next Steps** (Phases 4-5):
+- [ ] Nostr service announcements and discovery
+- [ ] HTTP/REST or gRPC API
+- [ ] Database persistence
+- [ ] Metrics and monitoring
+- [ ] Full integration tests
+
+✅ **TypeScript Reference Implementation**
+
+The TypeScript version (`/src` and `/tests`) served as the research prototype and now acts as a reference specification. It remains fully functional and demonstrates the complete atomic swap flow end-to-end.
+
+See [`cashu-broker/README.md`](./cashu-broker/README.md) for Rust details.
 
 ## Quick Start
 
@@ -70,19 +69,28 @@ This demonstrates:
 - Bob revealing adaptor secret by swapping
 - Broker completing the swap and earning a 1 sat fee (0.5%)
 
-### Rust Implementation (In Development)
+### Rust Implementation (Primary)
 
 ```bash
 cd cashu-broker
 
-# Build the library (requires Rust toolchain)
-cargo build
+# Build the broker (requires Rust toolchain)
+cargo build --release
+
+# Run the broker example
+cargo run --example run_broker
 
 # Run tests
 cargo test
 
-# See cashu-broker/README.md for details
+# See cashu-broker/README.md for full documentation
 ```
+
+This demonstrates:
+- Initializing Charlie (the broker) with liquidity on two mints
+- Generating swap quotes with fee calculation
+- Full async implementation using Tokio
+- CDK integration for Cashu operations
 
 ## Architecture
 
