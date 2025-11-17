@@ -181,7 +181,7 @@ async fn request_quote(
         fee_rate: quote.fee_rate,
         broker_pubkey: hex::encode(&quote.broker_public_key),
         adaptor_point: hex::encode(&quote.adaptor_point),
-        tweaked_pubkey: quote.tweaked_pubkey.as_ref().map(|t| hex::encode(t)).unwrap_or_default(),
+        tweaked_pubkey: quote.tweaked_pubkey.as_ref().map(hex::encode).unwrap_or_default(),
         status: SwapStatus::Pending.to_string(),
         created_at: Utc::now().to_rfc3339(),
         expires_at: Utc::now()
@@ -372,8 +372,7 @@ async fn get_quote_status(
         .get_swap_by_quote(&id)
         .await
         .map_err(ApiError::from)?
-        .map(|s| serde_json::to_value(s).ok())
-        .flatten();
+        .and_then(|s| serde_json::to_value(s).ok());
 
     Ok(Json(QuoteStatusResponse { quote, swap }))
 }

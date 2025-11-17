@@ -7,7 +7,8 @@ use crate::error::{BrokerError, Result};
 use crate::liquidity::LiquidityManager;
 use crate::types::{BrokerConfig, SwapExecution, SwapQuote, SwapRequest, SwapStatus};
 use cdk::amount::SplitTarget;
-use cdk::nuts::Proofs;
+use cdk::nuts::{Proofs, PublicKey, SpendingConditions};
+use cdk::wallet::SendOptions;
 use cdk::Amount;
 use schnorr_fun::fun::{Point, Scalar};
 use std::collections::HashMap;
@@ -144,7 +145,7 @@ impl SwapCoordinator {
             self.adaptor_ctx
                 .adaptor_point_from_secret(&quote_data.adaptor_secret);
         let client_tweaked = self.adaptor_ctx.tweak_public_key(&client_point, &adaptor_point);
-        let _client_tweaked_bytes = point_to_compressed_bytes(&client_tweaked);
+        let client_tweaked_bytes = point_to_compressed_bytes(&client_tweaked);
 
         info!(
             "Charlie locking {} sats to client on {}",
@@ -154,17 +155,14 @@ impl SwapCoordinator {
         // Get wallet and mint tokens
         let wallet = liquidity.get_wallet(&quote_data.quote.to_mint)?;
 
-        // TODO: Implement P2PK locking with tweaked pubkey for adaptor signatures
-        // For now, mint without spending conditions to get the project compiling
-        // We need to figure out how to create SpendingConditions with a custom tweaked pubkey
-
-        // Mint a quote first
+        // Step 1: Mint tokens (broker pays Lightning invoice)
         let mint_amount = Amount::from(quote_data.quote.output_amount);
         let mint_quote = wallet.mint_quote(mint_amount, None).await
             .map_err(|e| BrokerError::Cdk(format!("Failed to create mint quote: {:?}", e)))?;
 
         // Wait for quote to complete (in production, this would be paid via Lightning)
-        let proofs = wallet
+        // The minted tokens are automatically added to the wallet's balance
+        let _minted_proofs = wallet
             .wait_and_mint_quote(
                 mint_quote,
                 Default::default(),
@@ -173,6 +171,39 @@ impl SwapCoordinator {
             )
             .await
             .map_err(|e| BrokerError::Cdk(format!("Failed to mint tokens: {:?}", e)))?;
+
+        // Step 2: Lock the minted tokens to the tweaked pubkey (P + T)
+        // Create PublicKey from tweaked point bytes
+        let tweaked_pubkey = PublicKey::from_slice(&client_tweaked_bytes)
+            .map_err(|e| BrokerError::Cdk(format!("Failed to create public key: {:?}", e)))?;
+
+        // Create P2PK spending conditions
+        let spending_conditions = SpendingConditions::new_p2pk(tweaked_pubkey, None);
+
+        // Use prepare_send to create tokens locked to the tweaked pubkey
+        let prepared_send = wallet
+            .prepare_send(
+                mint_amount,
+                SendOptions {
+                    conditions: Some(spending_conditions),
+                    include_fee: false, // No additional fee for internal send
+                    ..Default::default()
+                },
+            )
+            .await
+            .map_err(|e| BrokerError::Cdk(format!("Failed to prepare locked tokens: {:?}", e)))?;
+
+        // Confirm the send to get the locked token
+        let token = prepared_send.confirm(None).await
+            .map_err(|e| BrokerError::Cdk(format!("Failed to create locked tokens: {:?}", e)))?;
+
+        // Get keysets from wallet to extract proofs from token
+        let keysets = wallet.get_mint_keysets().await
+            .map_err(|e| BrokerError::Cdk(format!("Failed to get keysets: {:?}", e)))?;
+
+        // Extract proofs from token
+        let proofs = token.proofs(&keysets)
+            .map_err(|e| BrokerError::Cdk(format!("Failed to extract proofs from token: {:?}", e)))?;
 
         // Update quote status
         quote_data.quote.status = SwapStatus::Accepted;

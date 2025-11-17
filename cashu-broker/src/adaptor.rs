@@ -44,7 +44,7 @@ impl AdaptorContext {
         message: &[u8],
     ) -> Result<EncryptedSignature> {
         // Convert scalar to KeyPair for EvenY
-        let keypair = KeyPair::<EvenY>::new_xonly(signing_key.clone());
+        let keypair = KeyPair::<EvenY>::new_xonly(*signing_key);
 
         let msg = Message::<Public>::plain("cashu-swap", message);
 
@@ -89,7 +89,7 @@ impl AdaptorContext {
         decryption_secret: &Scalar,
         encrypted_sig: EncryptedSignature,
     ) -> Result<schnorr_fun::Signature> {
-        Ok(self.schnorr.decrypt_signature(decryption_secret.clone(), encrypted_sig))
+        Ok(self.schnorr.decrypt_signature(*decryption_secret, encrypted_sig))
     }
 
     /// Recover the adaptor secret from an encrypted and decrypted signature pair
